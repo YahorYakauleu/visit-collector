@@ -4,13 +4,14 @@ import { parseVisit } from '../src/visit.js';
 const NOW = Date.parse('2026-10-14T15:42:10Z');
 const NY = 'America/New_York';
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148';
-const body = (p: object) => JSON.stringify({ first: true, source: 'facebook', campaign: '123', ab_test: 'paywall_v3', ab_segment: 'b', variant: 'v2', ...p });
+const body = (p: object) => JSON.stringify({ first: true, site: 'pay.toggle.example', source: 'facebook', campaign: '123', ab_test: 'paywall_v3', ab_segment: 'b', variant: 'v2', ...p });
 
 describe('parseVisit', () => {
   it('визит: местные сутки, разрезы из тела, страна от Cloudflare, устройство и ОС из User-Agent', () => {
     expect(parseVisit(body({}), { 'user-agent': IPHONE, 'cf-ipcountry': 'us' }, NOW, NY)).toEqual({
       key: {
         day: '2026-10-14',
+        site: 'pay.toggle.example',
         source: 'facebook',
         campaign: '123',
         ab_test: 'paywall_v3',
@@ -22,7 +23,18 @@ describe('parseVisit', () => {
       },
       first: true,
       bot: false,
+      trial: null,
     });
+  });
+
+  it('триал: сутки оформления — сейчас, когорта — сутки первого визита по часовому поясу; вне окна или кривое время — без когорты', () => {
+    const trial = (firstVisit: unknown) => parseVisit(JSON.stringify({ event: 'trial', site: 'pay.toggle.example', first_visit: firstVisit, first: true }), { 'user-agent': IPHONE }, NOW, NY)!;
+    expect(trial('2026-10-12T03:00:00Z')).toMatchObject({ key: { day: '2026-10-14', site: 'pay.toggle.example' }, first: false, trial: { cohortDay: '2026-10-11' } });
+    expect(trial('2026-10-07T15:42:10Z').trial).toEqual({ cohortDay: '2026-10-07' }); // ровно 7 дней — ещё в окне
+    expect(trial('2026-10-07T15:42:09Z').trial).toEqual({ cohortDay: null });
+    expect(trial('2026-10-15T00:00:00Z').trial).toEqual({ cohortDay: null }); // из будущего
+    expect(trial('вчера').trial).toEqual({ cohortDay: null });
+    expect(trial(undefined).trial).toEqual({ cohortDay: null });
   });
 
   it('сутки — по часовому поясу: 02:00 UTC — ещё вчера по Нью-Йорку', () => {
@@ -35,6 +47,17 @@ describe('parseVisit', () => {
     expect(visit.key).toMatchObject({ source: '', campaign: '42', ab_test: 'ab', country: '' });
     expect(visit.key.variant).toHaveLength(64);
     expect(visit.first).toBe(false); // только true — первый визит
+  });
+
+  it('сайт — домен: из визита (можно полным адресом), иначе из Origin; не адрес — не определён', () => {
+    const site = (value: unknown, origin?: string) =>
+      parseVisit(body({ site: value }), { 'user-agent': IPHONE, ...(origin && { origin }) }, NOW, NY)!.key.site;
+    expect(site('Pay.Toggle.Example')).toBe('pay.toggle.example');
+    expect(site('https://pay.toggle.example/path?utm_source=fb#/plans')).toBe('pay.toggle.example');
+    expect(site('localhost:5173')).toBe('localhost:5173');
+    expect(site(undefined, 'https://react.toggle.example')).toBe('react.toggle.example');
+    expect(site('a b')).toBe('');
+    expect(site(undefined)).toBe('');
   });
 
   it('устройства и ОС; страна XX и T1 (Tor) — не определена', () => {

@@ -4,6 +4,8 @@ export interface CounterRow extends VisitKey {
   visitors: number; // первые визиты
   visits: number; // все показы пейволла
   bots: number; // визиты ботов — в посетителей и визиты не входят
+  trials: number; // триалы посетителей, впервые пришедших в эти сутки (когорта, окно — TRIAL_WINDOW_DAYS)
+  trials_started: number; // триалы, оформленные в эти сутки, — для сверки с платёжными провайдерами
 }
 
 // Сколько разных сочетаний разрезов держим до сброса на диск. Сверх — кампания сворачивается в «(other)»:
@@ -17,7 +19,23 @@ export class Counters {
   private buffer = new Map<string, CounterRow>();
 
   add(visit: Visit): void {
-    let key = visit.key;
+    // триал — это оплата, а не просто показ: считаем и с «ботовым» User-Agent
+    if (visit.trial) {
+      this.row(visit.key).trials_started++;
+      if (visit.trial.cohortDay) this.row({ ...visit.key, day: visit.trial.cohortDay }).trials++;
+      return;
+    }
+    const row = this.row(visit.key);
+    if (visit.bot) {
+      row.bots++;
+    } else {
+      row.visits++;
+      if (visit.first) row.visitors++;
+    }
+  }
+
+  private row(visitKey: VisitKey): CounterRow {
+    let key = visitKey;
     let id = keyId(key);
     if (!this.buffer.has(id) && this.buffer.size >= MAX_KEYS) {
       key = { ...key, campaign: OTHER };
@@ -25,15 +43,10 @@ export class Counters {
     }
     let row = this.buffer.get(id);
     if (!row) {
-      row = { ...key, visitors: 0, visits: 0, bots: 0 };
+      row = { ...key, visitors: 0, visits: 0, bots: 0, trials: 0, trials_started: 0 };
       this.buffer.set(id, row);
     }
-    if (visit.bot) {
-      row.bots++;
-    } else {
-      row.visits++;
-      if (visit.first) row.visitors++;
-    }
+    return row;
   }
 
   get size(): number {

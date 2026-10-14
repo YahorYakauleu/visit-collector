@@ -54,10 +54,11 @@ describe('server', () => {
 
   it('/api/stats — по токену; отдаёт посетителей по дням и разрезу', async () => {
     const { url, counters, store, beacon } = await start();
-    await beacon(JSON.stringify({ first: true, source: 'facebook' }));
-    await beacon(JSON.stringify({ first: false, source: 'facebook' }));
+    await beacon(JSON.stringify({ first: true })); // сайт не передан — берётся из Origin
+    await beacon(JSON.stringify({ first: false, site: 'toggle.example' }));
+    await beacon(JSON.stringify({ event: 'trial', site: 'toggle.example', first_visit: '2026-10-14T14:58:00Z' }));
     store.add(counters.drain()); // как раз в минуту в main.ts
-    const query = `${url}/api/stats?from=2026-10-14&to=2026-10-14&group=source`;
+    const query = `${url}/api/stats?from=2026-10-14&to=2026-10-14&group=site`;
     expect((await fetch(query)).status).toBe(401);
     expect((await fetch(query, { headers: { authorization: 'Bearer wrong' } })).status).toBe(401);
     const res = await fetch(query, { headers: { authorization: 'Bearer secret' } });
@@ -65,8 +66,8 @@ describe('server', () => {
       from: '2026-10-14',
       to: '2026-10-14',
       time_zone: 'America/New_York', // сутки — из TIMEZONE, по умолчанию как у Stripe
-      group: 'source',
-      rows: [{ day: '2026-10-14', value: 'facebook', visitors: 1, visits: 2, bots: 0 }],
+      group: 'site',
+      rows: [{ day: '2026-10-14', value: 'toggle.example', visitors: 1, visits: 2, bots: 0, trials: 1, trials_started: 1 }],
     });
     const bad = (q: string) => fetch(`${url}/api/stats?${q}`, { headers: { authorization: 'Bearer secret' } }).then((r) => r.status);
     expect(await bad('from=14.10.2026&to=2026-10-14')).toBe(400);
