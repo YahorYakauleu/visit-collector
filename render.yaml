@@ -1,0 +1,19 @@
+# Render Blueprint: New → Blueprint → этот репозиторий. Создаёт сервис с диском под базу и токеном для дашборда
+services:
+  - type: web
+    name: visit-collector
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    # База — SQLite на диске сервиса; без диска счётчики пропадали бы при каждом деплое
+    disk:
+      name: data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      # Render сам сгенерирует длинную случайную строку; её же указать в дашборде
+      - key: READ_TOKEN
+        generateValue: true
+      - key: TIMEZONE
+        value: America/New_York
+      # ALLOWED_ORIGINS — домены лендингов через запятую; добавить в Environment, когда список доменов известен
