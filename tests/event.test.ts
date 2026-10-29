@@ -18,6 +18,7 @@ describe('parseEvent', () => {
         device: 'mobile',
         os: 'ios',
         browser: 'webview', // у IPHONE в тестах нет «Safari/» — так выглядит встроенное окно приложения
+        account: '',
       },
       bot: false,
     });
@@ -48,7 +49,7 @@ describe('parseEvent', () => {
 
   it('другие поля тела игнорируются: страна, устройство и ОС — только из заголовков', () => {
     const event = parseEvent(body({ country: 'SA', device: 'tv', utm_source: 'fb' }), { 'user-agent': IPHONE }, NOW, NY)!;
-    expect(event.key).toEqual({ day: '2026-10-14', event: 'visit', site: 'pay.toggle.example', path: '/sport', country: '', device: 'mobile', os: 'ios', browser: 'webview' });
+    expect(event.key).toEqual({ day: '2026-10-14', event: 'visit', site: 'pay.toggle.example', path: '/sport', country: '', device: 'mobile', os: 'ios', browser: 'webview', account: '' });
   });
 
   it('сайт — домен: из события (можно полным адресом), иначе из Origin; не адрес — не определён', () => {
@@ -82,6 +83,17 @@ describe('parseEvent', () => {
     expect(browser('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15')).toBe('safari');
     expect(browser('SomethingElse/1.0')).toBe('other');
     expect(parseEvent(body({}), {}, NOW, NY)!.key.browser).toBe(''); // без User-Agent — не определён
+  });
+
+  it('аккаунт пейволла — как в дашборде: stripe:<аккаунт> или solidgate; другое — не определён', () => {
+    const account = (value: unknown) => parseEvent(body({ account: value }), { 'user-agent': IPHONE }, NOW, NY)!.key.account;
+    expect(account('stripe:org')).toBe('stripe:org');
+    expect(account('Stripe:Corp')).toBe('stripe:corp');
+    expect(account('solidgate')).toBe('solidgate');
+    expect(account('solidgate:sg')).toBe('');
+    expect(account('org')).toBe('');
+    expect(account('stripe:<script>')).toBe('');
+    expect(account(undefined)).toBe('');
   });
 
   it('устройства и ОС; страна XX и T1 (Tor) — не определена', () => {

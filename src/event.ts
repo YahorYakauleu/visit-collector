@@ -8,9 +8,9 @@ export const EVENTS = [
 ] as const;
 export type EventName = (typeof EVENTS)[number];
 
-// Разрезы: что присылает лендинг (site, path) и что сборщик определяет сам (country, device, os, browser).
+// Разрезы: что присылает лендинг (site, path, account) и что сборщик определяет сам (country, device, os, browser).
 // Новый разрез — строка здесь: в базе разрезы лежат одним полем, колонки и миграции не нужны
-export const DIMENSIONS = ['site', 'path', 'country', 'device', 'os', 'browser'] as const;
+export const DIMENSIONS = ['site', 'path', 'country', 'device', 'os', 'browser', 'account'] as const;
 export type Dimension = (typeof DIMENSIONS)[number];
 
 // Местные сутки, событие и разрезы; пустая строка в разрезе — не определено
@@ -27,7 +27,7 @@ const BOT = /bot|crawl|spider|slurp|headless|lighthouse|facebookexternalhit|prev
 export const isEventName = (value: unknown): value is EventName => (EVENTS as readonly unknown[]).includes(value);
 
 // Тело — JSON (из sendBeacon приходит как text/plain, чтобы браузер не делал CORS-preflight):
-// { "event": "visit", "site": "example.com", "path": "/sport" }; другие поля игнорируются
+// { "event": "visit", "site": "example.com", "path": "/sport", "account": "stripe:org" }; другие поля игнорируются
 export function parseEvent(body: string, headers: IncomingHttpHeaders, now: number, timeZone: string): CollectedEvent | null {
   let data: unknown;
   try {
@@ -49,6 +49,7 @@ export function parseEvent(body: string, headers: IncomingHttpHeaders, now: numb
       device: device(userAgent),
       os: os(userAgent),
       browser: browser(userAgent),
+      account: account(v.account),
     },
     bot: userAgent === '' || BOT.test(userAgent),
   };
@@ -91,6 +92,12 @@ function path(value: unknown): string {
   } catch {
     return '';
   }
+}
+
+// Платёжный аккаунт пейволла, как в дашборде: stripe:org, stripe:corp… или solidgate. Остальное — не определено
+function account(value: unknown): string {
+  const raw = clean(value).toLowerCase();
+  return /^(stripe:[a-z0-9_]{1,32}|solidgate)$/.test(raw) ? raw : '';
 }
 
 // Страна — по IP, её проставляет Cloudflare перед сервисом; сам IP не храним
