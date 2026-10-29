@@ -8,9 +8,9 @@ export const EVENTS = [
 ] as const;
 export type EventName = (typeof EVENTS)[number];
 
-// Разрезы: что присылает лендинг (site, path) и что сборщик определяет сам (country, device, os).
+// Разрезы: что присылает лендинг (site, path) и что сборщик определяет сам (country, device, os, browser).
 // Новый разрез — строка здесь: в базе разрезы лежат одним полем, колонки и миграции не нужны
-export const DIMENSIONS = ['site', 'path', 'country', 'device', 'os'] as const;
+export const DIMENSIONS = ['site', 'path', 'country', 'device', 'os', 'browser'] as const;
 export type Dimension = (typeof DIMENSIONS)[number];
 
 // Местные сутки, событие и разрезы; пустая строка в разрезе — не определено
@@ -48,6 +48,7 @@ export function parseEvent(body: string, headers: IncomingHttpHeaders, now: numb
       country: country(headers),
       device: device(userAgent),
       os: os(userAgent),
+      browser: browser(userAgent),
     },
     bot: userAgent === '' || BOT.test(userAgent),
   };
@@ -111,4 +112,30 @@ function os(userAgent: string): string {
   if (/Mac OS X|Macintosh/i.test(userAgent)) return 'macos';
   if (/Linux|CrOS/i.test(userAgent)) return 'linux';
   return userAgent ? 'other' : '';
+}
+
+// Браузер. Встроенные браузеры соцсетей — отдельно: реклама открывает пейволл внутри приложения, а там иначе работают
+// Apple Pay и Google Pay. Прочие встроенные окна (Telegram и др.) себя не называют — они «webview».
+// Порядок важен: Chrome на iOS и браузеры на основе Chrome тоже пишут Safari и Chrome
+const BROWSERS: [string, RegExp][] = [
+  ['facebook', /FBAN|FBAV|FB_IAB|FBIOS|FB4A/],
+  ['instagram', /Instagram/],
+  ['tiktok', /BytedanceWebview|musical_ly|TikTok/i],
+  ['snapchat', /Snapchat/],
+  ['webview', /; wv\)/], // WebView на Android
+  ['samsung', /SamsungBrowser/],
+  ['edge', /Edg(e|A|iOS)?\//],
+  ['opera', /OPR\/|OPiOS|Opera/],
+  ['yandex', /YaBrowser/],
+  ['firefox', /Firefox\/|FxiOS/],
+  ['chrome', /Chrome\/|CriOS/],
+];
+function browser(userAgent: string): string {
+  if (!userAgent) return '';
+  const known = BROWSERS.find(([, pattern]) => pattern.test(userAgent));
+  if (known) return known[0];
+  // на iOS все браузеры — WebKit; у встроенного окна приложения нет «Safari/»
+  if (/iPhone|iPad|iPod/.test(userAgent)) return /Safari\//.test(userAgent) ? 'safari' : 'webview';
+  if (/Safari\//.test(userAgent)) return 'safari';
+  return 'other';
 }

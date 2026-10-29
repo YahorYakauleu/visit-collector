@@ -17,6 +17,7 @@ describe('parseEvent', () => {
         country: 'US',
         device: 'mobile',
         os: 'ios',
+        browser: 'webview', // у IPHONE в тестах нет «Safari/» — так выглядит встроенное окно приложения
       },
       bot: false,
     });
@@ -47,7 +48,7 @@ describe('parseEvent', () => {
 
   it('другие поля тела игнорируются: страна, устройство и ОС — только из заголовков', () => {
     const event = parseEvent(body({ country: 'SA', device: 'tv', utm_source: 'fb' }), { 'user-agent': IPHONE }, NOW, NY)!;
-    expect(event.key).toEqual({ day: '2026-10-14', event: 'visit', site: 'pay.toggle.example', path: '/sport', country: '', device: 'mobile', os: 'ios' });
+    expect(event.key).toEqual({ day: '2026-10-14', event: 'visit', site: 'pay.toggle.example', path: '/sport', country: '', device: 'mobile', os: 'ios', browser: 'webview' });
   });
 
   it('сайт — домен: из события (можно полным адресом), иначе из Origin; не адрес — не определён', () => {
@@ -59,6 +60,28 @@ describe('parseEvent', () => {
     expect(site(undefined, 'https://react.toggle.example')).toBe('react.toggle.example');
     expect(site('a b')).toBe('');
     expect(site(undefined)).toBe('');
+  });
+
+  it('браузер: встроенные браузеры соцсетей, WebView, Chrome на iOS и браузеры на основе Chrome — раньше Safari и Chrome', () => {
+    const browser = (userAgent: string) => parseEvent(body({}), { 'user-agent': userAgent }, NOW, NY)!.key.browser;
+    const iosSafari = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+    expect(browser(iosSafari)).toBe('safari');
+    expect(browser('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.6723.90 Mobile/15E148 Safari/604.1')).toBe('chrome');
+    expect(browser('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/485.0.0.40.109;FBBV/650000000;FBDV/iPhone15,2]')).toBe('facebook');
+    expect(browser('Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/485.0.0.40.109;]')).toBe('facebook');
+    expect(browser('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 350.0.0.40.97 (iPhone15,2; iOS 18_0; en_US)')).toBe('instagram');
+    expect(browser('Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36 trill_370103 BytedanceWebview/d8a21c6')).toBe('tiktok');
+    expect(browser('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Snapchat/13.10.0.40 (like Safari/8618.1.15.10.15)')).toBe('snapchat');
+    expect(browser('Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36')).toBe('webview');
+    expect(browser('Mozilla/5.0 (Linux; Android 14; SAMSUNG SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36')).toBe('samsung');
+    expect(browser('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0')).toBe('edge');
+    expect(browser('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 OPR/115.0.0.0')).toBe('opera');
+    expect(browser('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 YaBrowser/24.10.0.0 Safari/537.36')).toBe('yandex');
+    expect(browser('Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:132.0) Gecko/20100101 Firefox/132.0')).toBe('firefox');
+    expect(browser('Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36')).toBe('chrome');
+    expect(browser('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15')).toBe('safari');
+    expect(browser('SomethingElse/1.0')).toBe('other');
+    expect(parseEvent(body({}), {}, NOW, NY)!.key.browser).toBe(''); // без User-Agent — не определён
   });
 
   it('устройства и ОС; страна XX и T1 (Tor) — не определена', () => {
