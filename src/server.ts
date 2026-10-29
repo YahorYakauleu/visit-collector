@@ -76,7 +76,7 @@ export function createServer({ config, counters, store, now = Date.now }: Deps) 
     });
   }
 
-  // Цифры для дашборда: ?from=YYYY-MM-DD&to=YYYY-MM-DD&event=visit&group=source&country=US&country=SA (сутки — из TIMEZONE)
+  // Цифры для дашборда: ?from=YYYY-MM-DD&to=YYYY-MM-DD&event=visit&group=path&country=US&country=SA (сутки — из TIMEZONE)
   function stats(req: IncomingMessage, res: ServerResponse, url: URL) {
     const given = sha256(String(req.headers.authorization ?? ''));
     if (!timingSafeEqual(given, tokenHash)) return send(res, 401, 'token');

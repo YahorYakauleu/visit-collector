@@ -9,7 +9,7 @@ const connections = Number(args.connections ?? 100);
 const seconds = Number(args.seconds ?? 20);
 const rate = args.rate ? Number(args.rate) : null;
 
-const sources = ['facebook', 'google', 'tiktok', 'push', 'native', 'organic'];
+const sites = ['a.example', 'b.example', 'c.example', 'd.example'];
 const countries = ['US', 'SA', 'FR', 'ES', 'GB', 'DE', 'MX', 'BR', 'IN', 'RO', 'IT', 'GE'];
 const agents = [
   'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148',
@@ -29,11 +29,8 @@ const end = started + seconds * 1000;
 function visit() {
   const body = JSON.stringify({
     event: 'visit',
-    source: pick(sources),
-    campaign: `c${Math.floor(Math.random() * 300)}`,
-    ab_test: 'paywall_v3',
-    ab_segment: pick(['a', 'b', 'c']),
-    variant: `v${Math.floor(Math.random() * 6)}`,
+    site: pick(sites),
+    path: `/p${Math.floor(Math.random() * 300)}?fbclid=${Math.random()}`,
   });
   const headers = {
     'content-type': 'text/plain',

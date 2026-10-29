@@ -4,20 +4,16 @@ import { parseEvent } from '../src/event.js';
 const NOW = Date.parse('2026-10-14T15:42:10Z');
 const NY = 'America/New_York';
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148';
-const body = (p: object) => JSON.stringify({ event: 'visit', site: 'pay.toggle.example', source: 'facebook', campaign: '123', ab_test: 'paywall_v3', ab_segment: 'b', variant: 'v2', ...p });
+const body = (p: object) => JSON.stringify({ event: 'visit', site: 'pay.toggle.example', path: '/sport', ...p });
 
 describe('parseEvent', () => {
-  it('событие: местные сутки, имя, разрезы из тела, страна от Cloudflare, устройство и ОС из User-Agent', () => {
+  it('событие: местные сутки, имя, сайт и путь из тела, страна от Cloudflare, устройство и ОС из User-Agent', () => {
     expect(parseEvent(body({}), { 'user-agent': IPHONE, 'cf-ipcountry': 'us' }, NOW, NY)).toEqual({
       key: {
         day: '2026-10-14',
         event: 'visit',
         site: 'pay.toggle.example',
-        source: 'facebook',
-        campaign: '123',
-        ab_test: 'paywall_v3',
-        ab_segment: 'b',
-        variant: 'v2',
+        path: '/sport',
         country: 'US',
         device: 'mobile',
         os: 'ios',
@@ -37,10 +33,21 @@ describe('parseEvent', () => {
     expect(parseEvent(body({}), { 'user-agent': IPHONE }, Date.parse('2026-10-14T02:00:00Z'), 'UTC')!.key.day).toBe('2026-10-14');
   });
 
-  it('пустые и мусорные значения: не строка — не определено, управляющие символы вырезаются, длина ≤ 64', () => {
-    const event = parseEvent(body({ source: { x: 1 }, campaign: 42, ab_test: ' a\u0000b\n ', variant: 'x'.repeat(200) }), { 'user-agent': IPHONE }, NOW, NY)!;
-    expect(event.key).toMatchObject({ source: '', campaign: '42', ab_test: 'ab', country: '' });
-    expect(event.key.variant).toHaveLength(64);
+  it('путь: без query-строки и #, без завершающего /, можно полным адресом; не строка — не определён, длина ≤ 64', () => {
+    const path = (value: unknown) => parseEvent(body({ path: value }), { 'user-agent': IPHONE }, NOW, NY)!.key.path;
+    expect(path('/sport?utm_source=fb&fbclid=abc#/plans')).toBe('/sport');
+    expect(path('/sport/')).toBe('/sport');
+    expect(path('/')).toBe('/');
+    expect(path('https://pay.toggle.example/movies/?cpp=video')).toBe('/movies');
+    expect(path('/a b')).toBe('/a%20b');
+    expect(path(`/${'x'.repeat(200)}`)).toHaveLength(64);
+    expect(path({ x: 1 })).toBe('');
+    expect(path(undefined)).toBe('');
+  });
+
+  it('другие поля тела игнорируются: страна, устройство и ОС — только из заголовков', () => {
+    const event = parseEvent(body({ country: 'SA', device: 'tv', utm_source: 'fb' }), { 'user-agent': IPHONE }, NOW, NY)!;
+    expect(event.key).toEqual({ day: '2026-10-14', event: 'visit', site: 'pay.toggle.example', path: '/sport', country: '', device: 'mobile', os: 'ios' });
   });
 
   it('сайт — домен: из события (можно полным адресом), иначе из Origin; не адрес — не определён', () => {

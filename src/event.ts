@@ -8,7 +8,9 @@ export const EVENTS = [
 ] as const;
 export type EventName = (typeof EVENTS)[number];
 
-export const DIMENSIONS = ['site', 'source', 'campaign', 'ab_test', 'ab_segment', 'variant', 'country', 'device', 'os'] as const;
+// Разрезы: что присылает лендинг (site, path) и что сборщик определяет сам (country, device, os).
+// Новый разрез — строка здесь: в базе разрезы лежат одним полем, колонки и миграции не нужны
+export const DIMENSIONS = ['site', 'path', 'country', 'device', 'os'] as const;
 export type Dimension = (typeof DIMENSIONS)[number];
 
 // Местные сутки, событие и разрезы; пустая строка в разрезе — не определено
@@ -25,7 +27,7 @@ const BOT = /bot|crawl|spider|slurp|headless|lighthouse|facebookexternalhit|prev
 export const isEventName = (value: unknown): value is EventName => (EVENTS as readonly unknown[]).includes(value);
 
 // Тело — JSON (из sendBeacon приходит как text/plain, чтобы браузер не делал CORS-preflight):
-// { "event": "visit", "site": "example.com" } — остальные разрезы (source, campaign, ab_test, ab_segment, variant) необязательны
+// { "event": "visit", "site": "example.com", "path": "/sport" }; другие поля игнорируются
 export function parseEvent(body: string, headers: IncomingHttpHeaders, now: number, timeZone: string): CollectedEvent | null {
   let data: unknown;
   try {
@@ -42,11 +44,7 @@ export function parseEvent(body: string, headers: IncomingHttpHeaders, now: numb
       day: dayAt(now, timeZone),
       event: v.event,
       site: site(v.site, headers.origin),
-      source: clean(v.source),
-      campaign: clean(v.campaign),
-      ab_test: clean(v.ab_test),
-      ab_segment: clean(v.ab_segment),
-      variant: clean(v.variant),
+      path: path(v.path),
       country: country(headers),
       device: device(userAgent),
       os: os(userAgent),
@@ -77,6 +75,18 @@ function site(value: unknown, origin: string | undefined): string {
   const raw = clean(value) || origin || '';
   try {
     return new URL(raw.includes('://') ? raw : `https://${raw}`).host.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+// Путь страницы без query-строки и #: параметры в адресе (fbclid, gclid…) почти у каждого визита свои и раздули бы базу.
+// Принимаем и полный адрес; завершающий / отбрасываем, чтобы /sport и /sport/ были одним путём
+function path(value: unknown): string {
+  if (typeof value !== 'string' || !value) return '';
+  try {
+    const pathname = new URL(value, 'https://landing').pathname;
+    return clean(pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname);
   } catch {
     return '';
   }

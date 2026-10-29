@@ -47,7 +47,7 @@ describe('server', () => {
     const { beacon } = await start();
     expect((await beacon('not json')).status).toBe(400);
     expect((await beacon(JSON.stringify({ event: 'trial' }))).status).toBe(400);
-    expect((await beacon(JSON.stringify({ event: 'visit', source: 'x'.repeat(5_000) }))).status).toBe(413);
+    expect((await beacon(JSON.stringify({ event: 'visit', path: 'x'.repeat(5_000) }))).status).toBe(413);
     const statuses = [];
     for (let i = 0; i < 6; i++) statuses.push((await beacon(VISIT, { 'x-forwarded-for': '1.2.3.4' })).status);
     expect(statuses).toEqual([204, 204, 204, 204, 204, 429]);

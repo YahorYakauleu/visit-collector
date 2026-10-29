@@ -10,7 +10,7 @@ import { openStore } from '../src/store.js';
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile/15E148';
 const at = (iso: string) => Date.parse(iso);
 const visit = (iso: string, p: object = {}, ua = IPHONE) =>
-  parseEvent(JSON.stringify({ event: 'visit', source: 'facebook', ...p }), { 'user-agent': ua, 'cf-ipcountry': 'US' }, at(iso), 'America/New_York')!;
+  parseEvent(JSON.stringify({ event: 'visit', site: 'a.example', path: '/sport', ...p }), { 'user-agent': ua, 'cf-ipcountry': 'US' }, at(iso), 'America/New_York')!;
 
 describe('Counters', () => {
   it('складывает события одних суток и разрезов в одну строку; боты — отдельно', () => {
@@ -28,16 +28,16 @@ describe('Counters', () => {
     expect(counters.drain()).toEqual([]); // после сброса — с нуля
   });
 
-  it('слишком много разных сочетаний — новые кампании сворачиваются в «(other)»', () => {
+  it('слишком много разных сочетаний — новые пути сворачиваются в «(other)»', () => {
     const counters = new Counters();
-    for (let i = 0; i < 200_000; i++) counters.add(visit('2026-10-14T15:00:00Z', { campaign: `c${i}` }));
-    counters.add(visit('2026-10-14T15:00:00Z', { campaign: 'new-1' }));
-    counters.add(visit('2026-10-14T15:00:00Z', { campaign: 'new-2' }));
-    counters.add(visit('2026-10-14T15:00:00Z', { campaign: 'c5' })); // уже известная — как обычно
+    for (let i = 0; i < 200_000; i++) counters.add(visit('2026-10-14T15:00:00Z', { path: `/p${i}` }));
+    counters.add(visit('2026-10-14T15:00:00Z', { path: '/new-1' }));
+    counters.add(visit('2026-10-14T15:00:00Z', { path: '/new-2' }));
+    counters.add(visit('2026-10-14T15:00:00Z', { path: '/p5' })); // уже известный — как обычно
     const rows = counters.drain();
     expect(rows).toHaveLength(200_001);
-    expect(rows.find((r) => r.campaign === OTHER)?.count).toBe(2);
-    expect(rows.find((r) => r.campaign === 'c5')?.count).toBe(2);
+    expect(rows.find((r) => r.path === OTHER)?.count).toBe(2);
+    expect(rows.find((r) => r.path === '/p5')?.count).toBe(2);
   });
 });
 
@@ -47,9 +47,9 @@ describe('Store', () => {
     const counters = new Counters();
     counters.add(visit('2026-10-13T03:30:00Z')); // 12.10 по Нью-Йорку
     counters.add(visit('2026-10-13T05:00:00Z')); // 13.10 по Нью-Йорку
-    counters.add(visit('2026-10-13T05:10:00Z', { source: 'google' }));
-    counters.add(visit('2026-10-13T05:15:00Z', { source: 'google' }));
-    counters.add(visit('2026-10-13T06:00:00Z', { source: '' }));
+    counters.add(visit('2026-10-13T05:10:00Z', { path: '/movies' }));
+    counters.add(visit('2026-10-13T05:15:00Z', { path: '/movies' }));
+    counters.add(visit('2026-10-13T06:00:00Z', { path: '' }));
     store.add(counters.drain());
     return store;
   }
@@ -60,8 +60,8 @@ describe('Store', () => {
     const counters = new Counters();
     counters.add(visit('2026-10-13T05:20:00Z'));
     store.add(counters.drain());
-    const day = store.stats({ ...query, from: '2026-10-13', to: '2026-10-13', group: 'source' });
-    expect(day.find((r) => r.value === 'facebook')).toMatchObject({ count: 2 }); // 03:30 UTC — ещё 12.10 по Нью-Йорку
+    const day = store.stats({ ...query, from: '2026-10-13', to: '2026-10-13', group: 'path' });
+    expect(day.find((r) => r.value === '/sport')).toMatchObject({ count: 2 }); // 03:30 UTC — ещё 12.10 по Нью-Йорку
   });
 
   it('по дням и событиям (сутки посчитаны при приёме); разрез: по убыванию, «не определено» (null) — в конце', () => {
@@ -70,9 +70,9 @@ describe('Store', () => {
       { day: '2026-10-12', event: 'visit', value: null, count: 1, bots: 0 },
       { day: '2026-10-13', event: 'visit', value: null, count: 4, bots: 0 },
     ]);
-    expect(store.stats({ ...query, from: '2026-10-13', to: '2026-10-13', group: 'source' }).map((r) => [r.value, r.count])).toEqual([
-      ['google', 2],
-      ['facebook', 1],
+    expect(store.stats({ ...query, from: '2026-10-13', to: '2026-10-13', group: 'path' }).map((r) => [r.value, r.count])).toEqual([
+      ['/movies', 2],
+      ['/sport', 1],
       [null, 1],
     ]);
   });
@@ -82,10 +82,25 @@ describe('Store', () => {
     const total = (q: object) =>
       store.stats({ ...query, from: '2026-10-13', to: '2026-10-13', ...q }).reduce((s, r) => s + r.count, 0);
     expect(total({ events: ['visit'] })).toBe(4);
-    expect(total({ filters: { source: ['google'] } })).toBe(2);
-    expect(total({ filters: { source: ['google', 'none'] } })).toBe(3);
-    expect(total({ filters: { source: ['facebook'], country: ['US'] } })).toBe(1);
+    expect(total({ filters: { path: ['/movies'] } })).toBe(2);
+    expect(total({ filters: { path: ['/movies', 'none'] } })).toBe(3);
+    expect(total({ filters: { path: ['none'] } })).toBe(1);
+    expect(total({ filters: { path: ['/sport'], country: ['US'] } })).toBe(1);
     expect(total({ filters: { country: ['SA'] } })).toBe(0);
+  });
+
+  it('новый разрез без миграции: у строк, записанных до него, он не определён', () => {
+    const store = openStore(':memory:');
+    // строка из времени, когда разреза «путь» ещё не было
+    store.db.prepare(`INSERT INTO events (day, event, dims, count, bots) VALUES ('2026-10-13', 'visit', '{"site":"a.example"}', 3, 0)`).run();
+    const counters = new Counters();
+    counters.add(visit('2026-10-13T15:00:00Z'));
+    store.add(counters.drain());
+    expect(store.stats({ ...query, from: '2026-10-13', to: '2026-10-13', group: 'path' }).map((r) => [r.value, r.count])).toEqual([
+      ['/sport', 1],
+      [null, 3],
+    ]);
+    expect(store.stats({ ...query, from: '2026-10-13', to: '2026-10-13', group: 'site' }).map((r) => [r.value, r.count])).toEqual([['a.example', 4]]);
   });
 
   it('старая таблица счётчиков визитов удаляется, события пишутся в новую', () => {

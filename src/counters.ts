@@ -5,7 +5,7 @@ export interface CounterRow extends EventKey {
   bots: number; // события ботов — в count не входят
 }
 
-// Сколько разных сочетаний разрезов держим до сброса на диск. Сверх — кампания сворачивается в «(other)»:
+// Сколько разных сочетаний разрезов держим до сброса на диск. Сверх — путь сворачивается в «(other)»:
 // так мусорные значения из браузера не раздуют память и базу.
 const MAX_KEYS = 200_000;
 export const OTHER = '(other)';
@@ -25,7 +25,7 @@ export class Counters {
     let key = eventKey;
     let id = keyId(key);
     if (!this.buffer.has(id) && this.buffer.size >= MAX_KEYS) {
-      key = { ...key, campaign: OTHER };
+      key = { ...key, path: OTHER };
       id = keyId(key);
     }
     let row = this.buffer.get(id);
