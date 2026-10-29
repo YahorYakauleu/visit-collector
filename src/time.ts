@@ -30,23 +30,7 @@ function wallClock(ts: number, timeZone: string) {
   return { y: +p.year, m: +p.month, d: +p.day, h: +p.hour, mi: +p.minute, s: +p.second };
 }
 
-// На сколько секунд местное время впереди UTC в момент ts (летом в Нью-Йорке — −4 часа)
-function offsetAt(ts: number, timeZone: string): number {
-  const w = wallClock(ts, timeZone);
-  return Date.UTC(w.y, w.m - 1, w.d, w.h, w.mi, w.s) / 1000 - ts;
-}
-
 export function localDay(ts: number, timeZone: string): string {
   const w = wallClock(ts, timeZone);
   return `${w.y}-${String(w.m).padStart(2, '0')}-${String(w.d).padStart(2, '0')}`;
-}
-
-export function localMidnight(day: string, timeZone: string): number {
-  const asUtc = Date.parse(`${day}T00:00:00Z`) / 1000;
-  const guess = asUtc - offsetAt(asUtc, timeZone);
-  return asUtc - offsetAt(guess, timeZone); // второй шаг уточняет смещение у перехода на летнее/зимнее время
-}
-
-export function addDays(day: string, n: number): string {
-  return new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 }

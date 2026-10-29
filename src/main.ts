@@ -28,7 +28,7 @@ server.keepAliveTimeout = 65_000;
 server.headersTimeout = 66_000;
 server.listen(config.port, () => {
   console.log(`Сборщик визитов: http://localhost:${config.port}`);
-  if (!config.allowedOrigins.length) console.warn('ALLOWED_ORIGINS не задан — визиты принимаются с любого домена');
+  if (!config.allowedOrigins.length) console.warn('ALLOWED_ORIGINS не задан — события принимаются с любого домена');
 });
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {

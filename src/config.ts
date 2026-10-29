@@ -5,10 +5,10 @@ export interface Config {
   port: number;
   dataDir: string;
   readToken: string; // токен для GET /api/stats — его использует дашборд
-  allowedOrigins: string[]; // домены лендингов; пусто — визиты принимаются с любого (только для локальной разработки)
+  allowedOrigins: string[]; // домены лендингов; пусто — события принимаются с любого (только для локальной разработки)
   timeZone: string; // по какому времени резать сутки — как у Stripe в дашборде
   flushSeconds: number; // как часто счётчики из памяти пишутся на диск
-  rateLimitPerMinute: number; // визитов с одного IP в минуту, сверх — отбрасываем
+  rateLimitPerMinute: number; // событий с одного IP в минуту, сверх — отбрасываем
 }
 
 type Env = Record<string, string | undefined>;

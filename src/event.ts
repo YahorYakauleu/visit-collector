@@ -1,34 +1,32 @@
 import type { IncomingHttpHeaders } from 'node:http';
 import { localDay } from './time.js';
 
-// Визит — показ пейволла. Браузер сам знает, первый ли это визит посетителя (у него ещё не было id),
-// поэтому сервер не хранит посетителей поштучно — только счётчики по дням и разрезам.
+// События с лендинга. Сборщик не хранит их поштучно — только счётчики по суткам, событию и разрезам.
+// Новое событие — строка в EVENTS: имена не из списка отклоняются, иначе мусорные имена раздули бы базу.
+export const EVENTS = [
+  'visit', // уникальный посетитель пейволла — лендинг отправляет его один раз на браузер
+] as const;
+export type EventName = (typeof EVENTS)[number];
+
 export const DIMENSIONS = ['site', 'source', 'campaign', 'ab_test', 'ab_segment', 'variant', 'country', 'device', 'os'] as const;
 export type Dimension = (typeof DIMENSIONS)[number];
 
-// Местные сутки визита и его разрезы; пустая строка — не определено
-export type VisitKey = { day: string } & Record<Dimension, string>;
+// Местные сутки, событие и разрезы; пустая строка в разрезе — не определено
+export type EventKey = { day: string; event: EventName } & Record<Dimension, string>;
 
-export interface Visit {
-  key: VisitKey;
-  first: boolean; // первый визит посетителя — это и есть «посетитель» в воронке
+export interface CollectedEvent {
+  key: EventKey;
   bot: boolean;
-  // Триал: лендинг сообщает, что посетитель оформил подписку. Он считается в сутки оформления (key.day) и в когорте —
-  // сутках первого визита посетителя, если тот был не раньше чем за TRIAL_WINDOW_DAYS; иначе cohortDay — null
-  trial: { cohortDay: string | null } | null;
 }
-
-// Окно когорты: триал засчитывается в «Визит → Триал», если оформлен в течение недели после первого визита
-export const TRIAL_WINDOW_DAYS = 7;
-const DAY_MS = 86_400_000;
 
 const MAX_LENGTH = 64;
 const BOT = /bot|crawl|spider|slurp|headless|lighthouse|facebookexternalhit|preview|python|curl|wget|httpclient|java\/|go-http/i;
 
-// Тело визита — JSON (из sendBeacon приходит как text/plain, чтобы браузер не делал CORS-preflight):
-// { "first": true, "site": "example.com" } — остальные разрезы (source, campaign, ab_test, ab_segment, variant) необязательны.
-// Триал: { "event": "trial", "site": "example.com", "first_visit": "<ISO-время первого визита из браузера>" }
-export function parseVisit(body: string, headers: IncomingHttpHeaders, now: number, timeZone: string): Visit | null {
+export const isEventName = (value: unknown): value is EventName => (EVENTS as readonly unknown[]).includes(value);
+
+// Тело — JSON (из sendBeacon приходит как text/plain, чтобы браузер не делал CORS-preflight):
+// { "event": "visit", "site": "example.com" } — остальные разрезы (source, campaign, ab_test, ab_segment, variant) необязательны
+export function parseEvent(body: string, headers: IncomingHttpHeaders, now: number, timeZone: string): CollectedEvent | null {
   let data: unknown;
   try {
     data = JSON.parse(body);
@@ -37,11 +35,12 @@ export function parseVisit(body: string, headers: IncomingHttpHeaders, now: numb
   }
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
   const v = data as Record<string, unknown>;
+  if (!isEventName(v.event)) return null;
   const userAgent = String(headers['user-agent'] ?? '');
-  const trial = v.event === 'trial' ? { cohortDay: cohortDay(v.first_visit, now, timeZone) } : null;
   return {
     key: {
       day: dayAt(now, timeZone),
+      event: v.event,
       site: site(v.site, headers.origin),
       source: clean(v.source),
       campaign: clean(v.campaign),
@@ -52,20 +51,11 @@ export function parseVisit(body: string, headers: IncomingHttpHeaders, now: numb
       device: device(userAgent),
       os: os(userAgent),
     },
-    first: !trial && v.first === true,
     bot: userAgent === '' || BOT.test(userAgent),
-    trial,
   };
 }
 
-// Сутки первого визита для триала. Время приходит из браузера — берём, только если оно не в будущем и попадает в окно
-function cohortDay(value: unknown, now: number, timeZone: string): string | null {
-  const at = typeof value === 'string' ? Date.parse(value) : NaN;
-  if (!(at <= now + 60_000) || at < now - TRIAL_WINDOW_DAYS * DAY_MS) return null;
-  return localDay(Math.floor(at / 1000), timeZone);
-}
-
-// Местные сутки — одни на всю минуту: считать их заново на каждый из тысяч визитов в секунду незачем
+// Местные сутки — одни на всю минуту: считать их заново на каждое из тысяч событий в секунду незачем
 let cached = { minute: -1, timeZone: '', day: '' };
 function dayAt(now: number, timeZone: string): string {
   const minute = Math.floor(now / 60_000);
@@ -82,7 +72,7 @@ function clean(value: unknown): string {
     .slice(0, MAX_LENGTH);
 }
 
-// Сайт — домен лендинга: из визита, иначе из заголовка Origin, который ставит браузер. Принимаем и полный адрес
+// Сайт — домен лендинга: из события, иначе из заголовка Origin, который ставит браузер. Принимаем и полный адрес
 function site(value: unknown, origin: string | undefined): string {
   const raw = clean(value) || origin || '';
   try {

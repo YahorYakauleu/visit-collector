@@ -3,7 +3,7 @@ import http, { type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Config } from './config.js';
 import type { Counters } from './counters.js';
 import type { Store } from './store.js';
-import { DIMENSIONS, parseVisit, type Dimension } from './visit.js';
+import { DIMENSIONS, EVENTS, isEventName, parseEvent, type Dimension } from './event.js';
 
 const MAX_BODY = 2_048;
 const DAY_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
@@ -15,7 +15,7 @@ interface Deps {
   now?: () => number;
 }
 
-// Без фреймворка: визиты идут потоком (сотни в секунду), каждый лишний слой на счету
+// Без фреймворка: события идут потоком (сотни в секунду), каждый лишний слой на счету
 export function createServer({ config, counters, store, now = Date.now }: Deps) {
   // Ограничение частоты по IP: счётчик за текущую минуту, раз в минуту обнуляется целиком
   let minute = 0;
@@ -36,13 +36,13 @@ export function createServer({ config, counters, store, now = Date.now }: Deps) 
   return http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://collector');
     if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, 'ok');
-    if (url.pathname === '/v1/visit') return visit(req, res);
+    if (url.pathname === '/v1/events') return collect(req, res);
     if (req.method === 'GET' && url.pathname === '/api/stats') return stats(req, res, url);
     send(res, 404, 'not found');
   });
 
-  // Визит с лендинга. CORS — только для своих доменов; sendBeacon шлёт text/plain, без preflight
-  function visit(req: IncomingMessage, res: ServerResponse) {
+  // Событие с лендинга. CORS — только для своих доменов; sendBeacon шлёт text/plain, без preflight
+  function collect(req: IncomingMessage, res: ServerResponse) {
     const origin = req.headers.origin?.replace(/\/$/, '');
     if (origin && config.allowedOrigins.length && !config.allowedOrigins.includes(origin)) return send(res, 403, 'origin');
     if (origin) {
@@ -69,14 +69,14 @@ export function createServer({ config, counters, store, now = Date.now }: Deps) 
     });
     req.on('end', () => {
       if (res.headersSent) return;
-      const parsed = parseVisit(body, req.headers, now(), config.timeZone);
-      if (!parsed) return send(res, 400, 'bad visit');
+      const parsed = parseEvent(body, req.headers, now(), config.timeZone);
+      if (!parsed) return send(res, 400, `bad event: ${EVENTS.join('|')}`);
       counters.add(parsed);
       send(res, 204);
     });
   }
 
-  // Цифры для дашборда: ?from=YYYY-MM-DD&to=YYYY-MM-DD&group=source&country=US&country=SA (сутки — из TIMEZONE)
+  // Цифры для дашборда: ?from=YYYY-MM-DD&to=YYYY-MM-DD&event=visit&group=source&country=US&country=SA (сутки — из TIMEZONE)
   function stats(req: IncomingMessage, res: ServerResponse, url: URL) {
     const given = sha256(String(req.headers.authorization ?? ''));
     if (!timingSafeEqual(given, tokenHash)) return send(res, 401, 'token');
@@ -85,12 +85,14 @@ export function createServer({ config, counters, store, now = Date.now }: Deps) 
     const group = url.searchParams.get('group');
     if (!DAY_FORMAT.test(from) || !DAY_FORMAT.test(to) || from > to) return send(res, 400, 'from/to: YYYY-MM-DD');
     if (group && !(DIMENSIONS as readonly string[]).includes(group)) return send(res, 400, `group: ${DIMENSIONS.join('|')}`);
+    const events = url.searchParams.getAll('event');
+    if (!events.every(isEventName)) return send(res, 400, `event: ${EVENTS.join('|')}`);
     const filters: Partial<Record<Dimension, string[]>> = {};
     for (const dimension of DIMENSIONS) {
       const values = url.searchParams.getAll(dimension).filter(Boolean);
       if (values.length) filters[dimension] = values;
     }
-    const rows = store.stats({ from, to, group: (group as Dimension | null) || null, filters });
+    const rows = store.stats({ from, to, events, group: (group as Dimension | null) || null, filters });
     send(res, 200, JSON.stringify({ from, to, time_zone: config.timeZone, group, rows }), 'application/json');
   }
 }

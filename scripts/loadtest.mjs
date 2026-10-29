@@ -28,7 +28,7 @@ const end = started + seconds * 1000;
 
 function visit() {
   const body = JSON.stringify({
-    first: Math.random() < 0.8,
+    event: 'visit',
     source: pick(sources),
     campaign: `c${Math.floor(Math.random() * 300)}`,
     ab_test: 'paywall_v3',
@@ -44,7 +44,7 @@ function visit() {
   };
   const t = performance.now();
   return new Promise((resolve) => {
-    const req = http.request({ host: url.hostname, port: url.port, path: '/v1/visit', method: 'POST', agent, headers }, (res) => {
+    const req = http.request({ host: url.hostname, port: url.port, path: '/v1/events', method: 'POST', agent, headers }, (res) => {
       res.resume();
       res.on('end', () => {
         latencies.push(performance.now() - t);
